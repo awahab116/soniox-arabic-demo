@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Arabic Live Transcription (Soniox POC)
 
-## Getting Started
+Real-time Arabic speech-to-text in the browser using [Soniox](https://soniox.com). Transcription only — no LLM.
 
-First, run the development server:
+## How it works
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+Browser ──POST /api/soniox-key──▶ Next.js API route (holds SONIOX_API_KEY)
+        ◀── temporary key (60s, single use) ──
+Browser ──mic audio over WSS──▶ Soniox realtime API
+        ◀── tokens (final + provisional) ──
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- `app/api/soniox-key/route.ts` — exchanges the real key for a short-lived, single-use key. The real key never reaches the browser.
+- `app/page.tsx` — the app: header, transcript card, floating record dock. Uses `@soniox/speech-to-text-web` to stream the mic to Soniox.
+- `lib/transcript.ts` — turns Soniox tokens into timestamped segments (each pause / `<end>` token starts a new segment).
+- `components/` — `RecordButton`, `Waveform` (live mic level), `TranscriptView` (RTL segments, provisional text in grey, live caret).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+UI features: live waveform + session timer, timestamped segments, word/segment count, text size control,
+copy / download `.txt`, light & dark mode, mobile layout, and **Space** to start/stop.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Soniox settings: model `stt-rt-v5`, `languageHints: ["ar"]`, endpoint detection on (same as `STTSoniox.py` in interviewer-llm).
 
-## Learn More
+## Run locally
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cp .env.example .env.local   # then put your key in SONIOX_API_KEY
+npm install
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open http://localhost:3000, click **Start**, allow the microphone, and speak Arabic.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deploy to Vercel
 
-## Deploy on Vercel
+1. Push this folder to a new Git repo (GitHub/GitLab).
+2. In Vercel: **Add New → Project**, import the repo (framework auto-detected as Next.js).
+3. **Settings → Environment Variables**: add `SONIOX_API_KEY` (and optionally `SONIOX_MODEL`, `SONIOX_MAX_SESSION_SECONDS`).
+   Do **not** prefix it with `NEXT_PUBLIC_`.
+4. Deploy. Vercel serves over HTTPS, which browsers require for microphone access.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Environment variables
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Name | Required | Default | Purpose |
+|---|---|---|---|
+| `SONIOX_API_KEY` | yes | — | Soniox API key (server-side only) |
+| `SONIOX_MODEL` | no | `stt-rt-v5` | Soniox realtime model |
+| `SONIOX_MAX_SESSION_SECONDS` | no | `900` | Max length of one transcription session (caps cost if a tab is left open) |
+
+## Notes
+
+- `/api/soniox-key` is public: anyone with the URL can start a session on your Soniox account. Fine for a demo; add a passcode or Vercel password protection before sharing widely.
+- Requires Node 20+ (`.nvmrc` included — run `nvm use 20`). Tailwind 4.3's native binding doesn't install on Node 18.
